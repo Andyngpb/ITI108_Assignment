@@ -2,7 +2,7 @@
 # To run your web server, open up your terminal / command prompt
 # and type:
 #    cd <path to this file>
-#    python practical-03c-deployment.py
+#    python main.py
 #
 #------------------------------------------------------------------------------
 
@@ -13,7 +13,8 @@ import json
 
 # Configure our application 
 #
-tensorflow_server_url = "http://172.17.0.2:8501/"
+spec_server_url = "http://172.17.0.2:8501/"
+mfcc_server_url = "http://172.17.0.3:8503/"
 
 # Initialize our Flask app.
 # NOTE: Flask is used to host our app on a web server, so that
@@ -30,7 +31,10 @@ app = Flask(__name__)
 #------------------------------------------------------------------------------
 @app.route('/predict', methods=['POST'])
 def predict():
-    
+
+    spec_model_wgt = 0.7
+    mfcc_model_wgt = 1-spec_model_wgt
+
     # In this deployment, we are not using file uploads.
     # Instead we will extract JSON directly from the body,
     # which makes things a little easier.
@@ -41,7 +45,8 @@ def predict():
     # Set the IP address of the Docker container with the tensorflow/serving
     # image to connect to.
     #
-    url = tensorflow_server_url + 'v1/models/model/versions/1:predict'
+    url_spec = spec_server_url + 'v1/models/model/versions/1:predict'
+    url_mfcc = mfcc_server_url + 'v1/models/model/versions/1:predict'
 
     # Set the headers
     #
@@ -50,16 +55,19 @@ def predict():
     # POST our JSON coming from the client application
     # to the tensorflow/serving container.
     #
-    response = requests.post(url = url, headers = headers, json = x);
-    
+    response_spec = requests.post(url = url_spec, headers = headers, json = x);
+    response_mfcc = requests.post(url = url_mfcc, headers = headers, json = x);
+
     # If successful
-    if response.status_code == 200:
+    if (response_spec.status_code == 200) && (response_mfcc.status_code == 200) :
 
         # Retrieve the response and send it back as-is to
         # the calling application.
         #
-        y = response.json()
-        return Response(json.dumps(y), mimetype='application/json') 
+        yhat_spec = spec_model_wgt * response_spec
+        yhat_mfcc = mfcc_model_wgt * response_mfcc
+        yhat = np.sum([yhat_spec, yhat_mfcc], axis=0)
+        return Response(json.dumps(yhat), mimetype='application/json')
 
     return Response("{}", mimetype='application/json')                           
 
